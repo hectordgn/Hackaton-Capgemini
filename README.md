@@ -22,18 +22,21 @@ This solution was designed for the following user profile:
 * Constraints: Limited IT infrastructure budget (justifying the frugal approach) and manipulation of highly confidential data (justifying the cybersecurity approach).
 
 ## 4. Architecture
+
+Our solution follows a clear and modular pipeline:
+
 Raw Data
-↓
+   ↓
 Data Cleaning & Preprocessing
-↓
+   ↓
 Feature Engineering
-↓
-ML Pipeline (Scikit-learn)
-↓
-Prediction (Risk %)
-↓
-Explainability (Top factors)
-↓
-Dashboard + Excel Output
+   ↓
+Machine Learning Pipeline (Scikit-learn)
+   ↓
+Prediction (Attrition Risk %)
+   ↓
+Explainability (Top 5 Drivers)
+   ↓
+Interactive Dashboard & Excel Output
 
 ## 5. Project Structure

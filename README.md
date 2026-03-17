@@ -25,17 +25,35 @@ This solution was designed for the following user profile:
 
 Our solution follows a clear and modular pipeline:
 
-Raw Data
-   ↓
-Data Cleaning & Preprocessing
-   ↓
-Feature Engineering
-   ↓
-Machine Learning Pipeline (Scikit-learn)
-   ↓
-Prediction (Attrition Risk %)
-   ↓
-Explainability (Top 5 Drivers)
+            ┌───────────────┐
+            │   Raw Data    │
+            └──────┬────────┘
+                   ↓
+        ┌──────────────────────┐
+        │ Cleaning & Processing│
+        └──────┬───────────────┘
+               ↓
+        ┌──────────────────────┐
+        │ Feature Engineering  │
+        └──────┬───────────────┘
+               ↓
+        ┌──────────────────────┐
+        │ ML Pipeline          │
+        │ (Scikit-learn)       │
+        └──────┬───────────────┘
+               ↓
+        ┌──────────────────────┐
+        │ Risk Prediction (%)  │
+        └──────┬───────────────┘
+               ↓
+        ┌──────────────────────┐
+        │ Explainability       │
+        │ (Top Drivers)        │
+        └──────┬───────────────┘
+               ↓
+   ┌──────────────────────────────┐
+   │ Dashboard + Excel Output     │
+   └──────────────────────────────┘
    ↓
 Interactive Dashboard & Excel Output
 

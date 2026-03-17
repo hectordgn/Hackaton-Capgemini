@@ -13,10 +13,6 @@ In Scope:
 * Creation of an interactive dashboard to visualize risks and explain the key factors influencing the algorithm's decisions (Explainability).
 * Code security management (environment variables, input validation).
 
-Out of Scope:
-* Deployment on public Cloud servers (the solution is designed for local execution to ensure data sovereignty).
-* Direct, real-time integration with external Human Resources Information Systems (HRIS).
-* Use of massive foundation models (LLMs) that do not align with the Frugal AI constraints of the project.
 
 ## 3. Persona
 This solution was designed for the following user profile:

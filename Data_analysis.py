@@ -20,7 +20,7 @@ print("Répartition des employés (1 = Terminé/Démission, 0 = Toujours en post
 print(df['Termd'].value_counts(normalize=True) * 100) 
 
 print("\nTop 5 des raisons de départ :")
-print(df['TermReason'].value_counts().head(5))
+print(df['TermReason'].value_counts().head(50))
 
 # 5. Focus sur les données sensibles (pour la Cybersécurité)
 print("\n--- DONNÉES SENSIBLES ---")

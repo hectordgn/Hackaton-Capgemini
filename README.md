@@ -21,3 +21,19 @@ This solution was designed for the following user profile:
 * Needs: A visual tool, accessible without Data Science skills, allowing a shift from a reactive posture (noting departures) to a proactive posture (targeted retention actions).
 * Constraints: Limited IT infrastructure budget (justifying the frugal approach) and manipulation of highly confidential data (justifying the cybersecurity approach).
 
+## 4. Architecture
+Raw Data
+↓
+Data Cleaning & Preprocessing
+↓
+Feature Engineering
+↓
+ML Pipeline (Scikit-learn)
+↓
+Prediction (Risk %)
+↓
+Explainability (Top factors)
+↓
+Dashboard + Excel Output
+
+## 5. Project Structure

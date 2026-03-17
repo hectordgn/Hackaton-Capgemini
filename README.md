@@ -54,7 +54,5 @@ Our solution follows a clear and modular pipeline:
    ┌──────────────────────────────┐
    │ Dashboard + Excel Output     │
    └──────────────────────────────┘
-   ↓
-Interactive Dashboard & Excel Output
 
 ## 5. Project Structure

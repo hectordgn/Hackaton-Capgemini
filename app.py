@@ -35,13 +35,17 @@ def load_predictions():
         raise FileNotFoundError(
             f"Could not find {PREDICTIONS_PATH}. Run: python train_model.py"
         )
-    return pd.read_csv(PREDICTIONS_PATH)
+    df = pd.read_csv(PREDICTIONS_PATH)
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
 
 
 @st.cache_data
 def load_raw_data():
     if Path(DATA_PATH).exists():
-        return pd.read_csv(DATA_PATH)
+        df = pd.read_csv(DATA_PATH)
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
     return pd.DataFrame()
 
 
@@ -79,37 +83,20 @@ def load_audit_factors():
 
     audit_df = pd.read_excel(AUDIT_FACTORS_PATH)
     audit_df.columns = [str(c).strip() for c in audit_df.columns]
-
-    if "EmpID" not in audit_df.columns:
-        return audit_df
-
-    audit_df["EmpID"] = audit_df["EmpID"].astype(str).str.strip()
-
-    if Path(HR_KEYS_PATH).exists():
-        keys_df = pd.read_csv(HR_KEYS_PATH)
-        keys_df.columns = [str(c).strip() for c in keys_df.columns]
-
-        if "EmpID" in keys_df.columns and "Employee_Hash_ID" in keys_df.columns:
-            keys_map = keys_df[["EmpID", "Employee_Hash_ID"]].copy()
-            keys_map["EmpID"] = keys_map["EmpID"].astype(str).str.strip()
-            keys_map["Employee_Hash_ID"] = keys_map["Employee_Hash_ID"].astype(str).str.strip()
-
-            audit_df = audit_df.merge(
-                keys_map,
-                on="EmpID",
-                how="left",
-            )
-
-            # Replace old numeric EmpID with hashed EmpID for matching in the UI
-            audit_df["EmpID"] = audit_df["Employee_Hash_ID"].fillna(audit_df["EmpID"]).astype(str).str.strip()
-
-            audit_df = audit_df.drop(columns=["Employee_Hash_ID"], errors="ignore")
-
     return audit_df
+
 
 # =========================
 # HELPERS
 # =========================
+def normalize_id_series(series):
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.replace(".0", "", regex=False)
+    )
+
+
 def safe_display_df(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     for col in out.columns:
@@ -158,10 +145,25 @@ def clean_factor_label(value):
 
     return text
 
+
+def risk_bucket_from_score(score):
+    if pd.isna(score):
+        return np.nan
+    if score < 0.33:
+        return "Low"
+    if score < 0.66:
+        return "Medium"
+    return "High"
+
+
 def compute_risk_buckets(df: pd.DataFrame) -> pd.DataFrame:
     temp = df.copy()
+
+    if "DisplayRisk" not in temp.columns:
+        return pd.DataFrame()
+
     temp["RiskBucket"] = pd.cut(
-        temp["PredictedRisk"],
+        temp["DisplayRisk"],
         bins=[-0.001, 0.33, 0.66, 1.0],
         labels=["Low", "Medium", "High"],
     )
@@ -174,7 +176,7 @@ def compute_risk_buckets(df: pd.DataFrame) -> pd.DataFrame:
         "TenureDays",
         "TenureYears",
         "DaysSinceLastReview",
-        "PredictedRisk",
+        "DisplayRisk",
     ]
     candidate_cols = [c for c in candidate_cols if c in temp.columns]
 
@@ -238,14 +240,24 @@ except Exception as e:
     st.error(f"Error while loading files: {e}")
     st.stop()
 
-# Keep IDs as strings for safe matching
+# =========================
+# NORMALIZE IDs
+# =========================
 if "EmpID" in predictions_df.columns:
-    predictions_df["EmpID"] = predictions_df["EmpID"].astype(str).str.strip()
+    predictions_df["EmpID"] = normalize_id_series(predictions_df["EmpID"])
 
 if not raw_df.empty and "EmpID" in raw_df.columns:
-    raw_df["EmpID"] = raw_df["EmpID"].astype(str).str.strip()
+    raw_df["EmpID"] = normalize_id_series(raw_df["EmpID"])
 
-# Optional enrich from raw data
+if not audit_factors_df.empty and "EmpID" in audit_factors_df.columns:
+    audit_factors_df["EmpID"] = normalize_id_series(audit_factors_df["EmpID"])
+
+if not hr_keys_df.empty and "EmpID" in hr_keys_df.columns:
+    hr_keys_df["EmpID"] = normalize_id_series(hr_keys_df["EmpID"])
+
+# =========================
+# OPTIONAL RAW DATA ENRICHMENT
+# =========================
 if not raw_df.empty and "EmpID" in predictions_df.columns and "EmpID" in raw_df.columns:
     join_cols = [
         "EmpID",
@@ -257,12 +269,27 @@ if not raw_df.empty and "EmpID" in predictions_df.columns and "EmpID" in raw_df.
         "CitizenDesc",
         "HispanicLatino",
         "ManagerID",
+        "Department",
+        "Position",
+        "PerformanceScore",
+        "EngagementSurvey",
+        "EmpSatisfaction",
+        "DaysLateLast30",
+        "Absences",
+        "Termd",
     ]
     join_cols = [c for c in join_cols if c in raw_df.columns]
     raw_subset = raw_df[join_cols].copy()
-    predictions_df = predictions_df.merge(raw_subset, on="EmpID", how="left", suffixes=("", "_raw"))
+    predictions_df = predictions_df.merge(
+        raw_subset,
+        on="EmpID",
+        how="left",
+        suffixes=("", "_raw"),
+    )
 
-# Create engineered display columns if missing
+# =========================
+# ENGINEERED DISPLAY COLUMNS
+# =========================
 if "DateofHire" in predictions_df.columns and "TenureDays" not in predictions_df.columns:
     dt = pd.to_datetime(predictions_df["DateofHire"], errors="coerce")
     predictions_df["TenureDays"] = (pd.Timestamp.today() - dt).dt.days
@@ -275,7 +302,115 @@ if "LastPerformanceReview_Date" in predictions_df.columns and "DaysSinceLastRevi
     dt = pd.to_datetime(predictions_df["LastPerformanceReview_Date"], errors="coerce")
     predictions_df["DaysSinceLastReview"] = (pd.Timestamp.today() - dt).dt.days
 
+# =========================
+# MATCH AUDIT FILE TO SAME EMPLOYEE TABLE
+# =========================
+if not audit_factors_df.empty and "EmpID" in audit_factors_df.columns:
+    audit_merge_df = audit_factors_df.copy()
 
+    possible_hash_cols = []
+    if not hr_keys_df.empty:
+        possible_hash_cols = [
+            c for c in hr_keys_df.columns
+            if c.lower() in ["employee_hash_id", "hash_id", "hashed_empid"]
+        ]
+
+    if not hr_keys_df.empty and possible_hash_cols:
+        hash_col = possible_hash_cols[0]
+
+        keys_map = hr_keys_df[["EmpID", hash_col]].copy()
+        keys_map["EmpID"] = normalize_id_series(keys_map["EmpID"])
+        keys_map[hash_col] = normalize_id_series(keys_map[hash_col])
+
+        audit_merge_df = audit_merge_df.merge(keys_map, on="EmpID", how="left")
+        audit_merge_df["AuditMatchID"] = audit_merge_df[hash_col].fillna(audit_merge_df["EmpID"])
+    else:
+        audit_merge_df["AuditMatchID"] = audit_merge_df["EmpID"]
+
+    keep_audit_cols = [
+        "AuditMatchID",
+        "Risque_%",
+        "Facteur_1",
+        "Facteur_2",
+        "Facteur_3",
+        "Facteur_4",
+        "Facteur_5",
+    ]
+    keep_audit_cols = [c for c in keep_audit_cols if c in audit_merge_df.columns]
+    audit_merge_df = audit_merge_df[keep_audit_cols].copy()
+
+    if "Risque_%" in audit_merge_df.columns:
+        audit_merge_df["AuditRisk"] = pd.to_numeric(audit_merge_df["Risque_%"], errors="coerce") / 100.0
+        audit_merge_df["AuditClass"] = (audit_merge_df["AuditRisk"] >= 0.5).astype("Int64")
+        audit_merge_df["AuditBucket"] = audit_merge_df["AuditRisk"].apply(risk_bucket_from_score)
+
+    predictions_df["PredMatchID"] = predictions_df["EmpID"]
+
+    predictions_df = predictions_df.merge(
+        audit_merge_df,
+        left_on="PredMatchID",
+        right_on="AuditMatchID",
+        how="left",
+    )
+
+# =========================
+# UNIFIED DISPLAY COLUMNS
+# =========================
+if "AuditRisk" in predictions_df.columns:
+    predictions_df["DisplayRisk"] = predictions_df["AuditRisk"].fillna(predictions_df["PredictedRisk"])
+else:
+    predictions_df["DisplayRisk"] = predictions_df["PredictedRisk"]
+
+if "AuditClass" in predictions_df.columns:
+    predictions_df["DisplayClass"] = predictions_df["AuditClass"].fillna(predictions_df["PredictedClass"])
+else:
+    predictions_df["DisplayClass"] = predictions_df["PredictedClass"]
+
+predictions_df["DisplayClass"] = pd.to_numeric(
+    predictions_df["DisplayClass"], errors="coerce"
+).fillna(0).astype(int)
+
+predictions_df["RiskBucket"] = predictions_df["DisplayRisk"].apply(risk_bucket_from_score)
+
+# =========================
+# UNIFIED UI EMPLOYEE ID
+# =========================
+ui_emp_id_col = "EmpID"
+
+if not hr_keys_df.empty and "EmpID" in hr_keys_df.columns:
+    possible_hash_cols = [
+        c for c in hr_keys_df.columns
+        if c.lower() in ["employee_hash_id", "hash_id", "hashed_empid"]
+    ]
+
+    if possible_hash_cols:
+        hash_col = possible_hash_cols[0]
+
+        keys_ui = hr_keys_df[["EmpID", hash_col]].copy()
+        keys_ui["EmpID"] = normalize_id_series(keys_ui["EmpID"])
+        keys_ui[hash_col] = normalize_id_series(keys_ui[hash_col])
+
+        predictions_df = predictions_df.merge(
+            keys_ui,
+            on="EmpID",
+            how="left",
+            suffixes=("", "_ui"),
+        )
+
+        predictions_df["UIEmpID"] = predictions_df[hash_col].fillna(predictions_df["EmpID"])
+        ui_emp_id_col = "UIEmpID"
+    else:
+        predictions_df["UIEmpID"] = predictions_df["EmpID"]
+        ui_emp_id_col = "UIEmpID"
+else:
+    predictions_df["UIEmpID"] = predictions_df["EmpID"]
+    ui_emp_id_col = "UIEmpID"
+
+predictions_df["UIEmpID"] = normalize_id_series(predictions_df["UIEmpID"])
+
+# =========================
+# GLOBAL VALUES
+# =========================
 # =========================
 # GLOBAL VALUES
 # =========================
@@ -283,19 +418,21 @@ total_employees = int(len(predictions_df))
 actual_attrition_rate = (
     float(predictions_df["Termd"].mean()) if "Termd" in predictions_df.columns else 0.0
 )
-predicted_high_risk = (
-    int((predictions_df["PredictedClass"] == 1).sum())
-    if "PredictedClass" in predictions_df.columns
-    else 0
-)
-roc_auc = float(metadata.get("roc_auc", metadata.get("metrics", {}).get("roc_auc", 0.0)))
 model_name = metadata.get("model_name", "Logistic Regression")
-
 risk_bucket_table = compute_risk_buckets(predictions_df)
 fairness_df = pd.DataFrame(metadata.get("fairness_audit", []))
 security_scan = make_security_scan(predictions_df, raw_df, metadata)
+audit_linked = "Yes" if "AuditRisk" in predictions_df.columns and predictions_df["AuditRisk"].notna().any() else "No"
 
-
+# use audit count first for top metric
+if "AuditClass" in predictions_df.columns and predictions_df["AuditClass"].notna().any():
+    predicted_high_risk = int((predictions_df["AuditClass"] == 1).sum())
+else:
+    predicted_high_risk = (
+        int((predictions_df["DisplayClass"] == 1).sum())
+        if "DisplayClass" in predictions_df.columns
+        else 0
+    )
 # =========================
 # HEADER
 # =========================
@@ -306,7 +443,7 @@ m1, m2, m3, m4 = st.columns(4)
 m1.metric("Employees", total_employees)
 m2.metric("Actual attrition rate", f"{actual_attrition_rate * 100:.1f}%")
 m3.metric("Predicted high-risk employees", predicted_high_risk)
-m4.metric("Model ROC-AUC", f"{roc_auc:.3f}")
+m4.metric("Audit file linked", audit_linked)
 
 tabs = st.tabs(
     [
@@ -317,6 +454,7 @@ tabs = st.tabs(
         "Security + model card",
     ]
 )
+
 # =========================
 # TAB 1 - OVERVIEW
 # =========================
@@ -384,8 +522,9 @@ with tabs[0]:
         dept_summary = (
             predictions_df.groupby("Department", dropna=False)
             .agg(
-                employee_count=("EmpID", "count"),
+                employee_count=(ui_emp_id_col, "count"),
                 actual_attrition_rate=("Termd", "mean"),
+                avg_display_risk=("DisplayRisk", "mean"),
             )
             .reset_index()
         )
@@ -393,9 +532,12 @@ with tabs[0]:
         dept_summary["actual_attrition_rate"] = (
             dept_summary["actual_attrition_rate"] * 100
         ).round(2)
+        dept_summary["avg_display_risk"] = (
+            dept_summary["avg_display_risk"] * 100
+        ).round(2)
 
         dept_summary = dept_summary.sort_values(
-            by="actual_attrition_rate", ascending=False
+            by="avg_display_risk", ascending=False
         ).reset_index(drop=True)
 
         st.dataframe(dept_summary, use_container_width=True)
@@ -424,16 +566,20 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Explain one employee")
 
-    emp_options = sorted(predictions_df["EmpID"].dropna().astype(str).unique().tolist())
+    emp_options = sorted(
+        predictions_df["UIEmpID"].dropna().astype(str).unique().tolist()
+    )
     selected_emp_id = st.selectbox("Choose an employee", emp_options)
 
-    selected_row = predictions_df[predictions_df["EmpID"].astype(str).str.strip() == str(selected_emp_id).strip()].iloc[0]
+    selected_row = predictions_df[
+        predictions_df["UIEmpID"].astype(str).str.strip() == str(selected_emp_id).strip()
+    ].iloc[0]
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Predicted risk", f"{float(selected_row['PredictedRisk']) * 100:.2f}%")
+        st.metric("Predicted risk", f"{float(selected_row['DisplayRisk']) * 100:.2f}%")
     with c2:
-        st.metric("Predicted class", int(selected_row["PredictedClass"]))
+        st.metric("Predicted class", int(selected_row["DisplayClass"]))
     with c3:
         actual_value = (
             int(selected_row["Termd"])
@@ -443,7 +589,7 @@ with tabs[1]:
         st.metric("Actual class", actual_value)
 
     snapshot_cols = [
-        "EmpID",
+        "UIEmpID",
         "Department",
         "Position",
         "Salary",
@@ -474,29 +620,17 @@ with tabs[1]:
 
     st.markdown("### Factors from audit file")
 
-    selected_emp_id_str = str(selected_emp_id).strip()
-
-    employee_factors = pd.DataFrame()
-    if not audit_factors_df.empty and "EmpID" in audit_factors_df.columns:
-        employee_factors = audit_factors_df[
-            audit_factors_df["EmpID"].astype(str).str.strip() == selected_emp_id_str
-        ]
-
-    if not employee_factors.empty:
-        factor_row = employee_factors.iloc[0]
-
-        risque_excel = factor_row["Risque_%"] if "Risque_%" in factor_row.index else None
-        if pd.notna(risque_excel):
-            st.write(f"**Risk from audit file:** {risque_excel}%")
+    if "AuditRisk" in selected_row.index and pd.notna(selected_row["AuditRisk"]):
+        st.write(f"**Risk from audit file:** {float(selected_row['AuditRisk']) * 100:.2f}%")
 
         facteur_cols = [
             c for c in ["Facteur_1", "Facteur_2", "Facteur_3", "Facteur_4", "Facteur_5"]
-            if c in factor_row.index
+            if c in selected_row.index
         ]
 
         displayed_factors = []
         for c in facteur_cols:
-            value = factor_row[c]
+            value = selected_row[c]
             if pd.notna(value) and str(value).strip() != "":
                 displayed_factors.append(clean_factor_label(value))
 
@@ -517,147 +651,165 @@ with tabs[1]:
 # TAB 3 - HIGH-RISK TABLE
 # =========================
 with tabs[2]:
-    st.subheader("Employees sorted by attrition risk")
+    st.subheader("Employees sorted by attrition risk (audit file)")
 
-    display_cols = [
-        "EmpID",
-        "ManagerID",
-        "Department",
-        "Position",
-        "PerformanceScore",
-        "EngagementSurvey",
-        "EmpSatisfaction",
-        "DaysLateLast30",
-        "Absences",
-        "TenureDays",
-        "TenureYears",
-        "DaysSinceLastReview",
-        "PredictedRisk",
-        "PredictedClass",
-        "Termd",
-    ]
-    display_cols = [c for c in display_cols if c in predictions_df.columns]
+    # ONLY use rows that exist in the audit file
+    if "AuditRisk" not in predictions_df.columns or predictions_df["AuditRisk"].notna().sum() == 0:
+        st.warning("No audit-file risk values were found.")
+    else:
+        audit_table_df = predictions_df[predictions_df["AuditRisk"].notna()].copy()
 
-    high_risk_df = predictions_df[display_cols].copy()
+        # use audit risk/class/bucket only
+        audit_table_df["AuditRiskBucket"] = audit_table_df["AuditRisk"].apply(risk_bucket_from_score)
+        audit_table_df["AuditClassDisplay"] = pd.to_numeric(
+            audit_table_df["AuditClass"], errors="coerce"
+        ).fillna(0).astype(int)
 
-    st.markdown("### Filters")
+        st.markdown("### Filters")
 
-    f1, f2, f3, f4 = st.columns(4)
+        f1, f2, f3, f4 = st.columns(4)
 
-    with f1:
-        manager_options = []
-        if "ManagerID" in high_risk_df.columns:
-            manager_options = sorted(
-                [x for x in high_risk_df["ManagerID"].dropna().unique().tolist()]
+        with f1:
+            manager_options = []
+            if "ManagerID" in audit_table_df.columns:
+                manager_options = sorted(
+                    [x for x in audit_table_df["ManagerID"].dropna().unique().tolist()]
+                )
+            selected_managers = st.multiselect(
+                "Filter by ManagerID",
+                options=manager_options,
+                default=[],
             )
-        selected_managers = st.multiselect(
-            "Filter by ManagerID",
-            options=manager_options,
-            default=[],
-        )
 
-    with f2:
-        department_options = []
-        if "Department" in high_risk_df.columns:
-            department_options = sorted(
-                [str(x) for x in high_risk_df["Department"].dropna().unique().tolist()]
+        with f2:
+            department_options = []
+            if "Department" in audit_table_df.columns:
+                department_options = sorted(
+                    [str(x) for x in audit_table_df["Department"].dropna().unique().tolist()]
+                )
+            selected_departments = st.multiselect(
+                "Filter by Department",
+                options=department_options,
+                default=[],
             )
-        selected_departments = st.multiselect(
-            "Filter by Department",
-            options=department_options,
-            default=[],
-        )
 
-    with f3:
-        position_options = []
-        if "Position" in high_risk_df.columns:
-            position_options = sorted(
-                [str(x) for x in high_risk_df["Position"].dropna().unique().tolist()]
+        with f3:
+            position_options = []
+            if "Position" in audit_table_df.columns:
+                position_options = sorted(
+                    [str(x) for x in audit_table_df["Position"].dropna().unique().tolist()]
+                )
+            selected_positions = st.multiselect(
+                "Filter by Position",
+                options=position_options,
+                default=[],
             )
-        selected_positions = st.multiselect(
-            "Filter by Position",
-            options=position_options,
-            default=[],
-        )
 
-    with f4:
-        class_options = []
-        if "PredictedClass" in high_risk_df.columns:
+        with f4:
             class_options = sorted(
-                [int(x) for x in high_risk_df["PredictedClass"].dropna().unique().tolist()]
+                [int(x) for x in audit_table_df["AuditClassDisplay"].dropna().unique().tolist()]
             )
-        selected_classes = st.multiselect(
-            "Filter by Predicted class",
-            options=class_options,
-            default=[],
-        )
-
-    g1, g2 = st.columns(2)
-
-    with g1:
-        min_risk = st.slider(
-            "Minimum predicted risk (%)",
-            min_value=0.0,
-            max_value=100.0,
-            value=0.0,
-            step=1.0,
-        )
-
-    with g2:
-        only_actual_attrition = st.checkbox("Show only actual attrition = 1", value=False)
-
-    filtered_df = high_risk_df.copy()
-
-    if selected_managers and "ManagerID" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["ManagerID"].isin(selected_managers)]
-
-    if selected_departments and "Department" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["Department"].astype(str).isin(selected_departments)]
-
-    if selected_positions and "Position" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["Position"].astype(str).isin(selected_positions)]
-
-    if selected_classes and "PredictedClass" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["PredictedClass"].isin(selected_classes)]
-
-    if "PredictedRisk" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["PredictedRisk"] * 100 >= min_risk]
-
-    if only_actual_attrition and "Termd" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["Termd"] == 1]
-
-    filtered_df = filtered_df.sort_values(by="PredictedRisk", ascending=False).reset_index(drop=True)
-
-    if "ManagerID" in filtered_df.columns:
-        st.markdown("### Manager summary")
-
-        manager_summary = (
-            filtered_df.groupby(["ManagerID"], dropna=False)
-            .agg(
-                employee_count=("EmpID", "count"),
-                avg_predicted_risk=("PredictedRisk", "mean"),
-                predicted_high_risk_count=("PredictedClass", "sum"),
-                actual_attrition_count=("Termd", "sum"),
+            selected_classes = st.multiselect(
+                "Filter by Audit class",
+                options=class_options,
+                default=[],
             )
-            .reset_index()
+
+        g1, g2 = st.columns(2)
+
+        with g1:
+            min_risk = st.slider(
+                "Minimum audit risk (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=1.0,
+            )
+
+        with g2:
+            only_actual_attrition = st.checkbox("Show only actual attrition = 1", value=False)
+
+        filtered_df = audit_table_df.copy()
+
+        if selected_managers and "ManagerID" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["ManagerID"].isin(selected_managers)]
+
+        if selected_departments and "Department" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Department"].astype(str).isin(selected_departments)]
+
+        if selected_positions and "Position" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Position"].astype(str).isin(selected_positions)]
+
+        if selected_classes:
+            filtered_df = filtered_df[filtered_df["AuditClassDisplay"].isin(selected_classes)]
+
+        filtered_df = filtered_df[filtered_df["AuditRisk"] * 100 >= min_risk]
+
+        if only_actual_attrition and "Termd" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Termd"] == 1]
+
+        filtered_df = filtered_df.sort_values(by="AuditRisk", ascending=False).reset_index(drop=True)
+
+        if "ManagerID" in filtered_df.columns:
+            st.markdown("### Manager summary (audit file)")
+
+            manager_summary = (
+                filtered_df.groupby(["ManagerID"], dropna=False)
+                .agg(
+                    employee_count=("UIEmpID", "count"),
+                    avg_audit_risk=("AuditRisk", "mean"),
+                    audit_high_risk_count=("AuditClassDisplay", "sum"),
+                    actual_attrition_count=("Termd", "sum"),
+                )
+                .reset_index()
+            )
+
+            manager_summary["avg_audit_risk"] = (manager_summary["avg_audit_risk"] * 100).round(2)
+            manager_summary = manager_summary.sort_values(
+                by=["avg_audit_risk", "audit_high_risk_count"],
+                ascending=[False, False],
+            ).reset_index(drop=True)
+
+            st.dataframe(manager_summary, use_container_width=True)
+
+        st.markdown("### Filtered employee table")
+
+        show_cols = [
+            "UIEmpID",
+            "ManagerID",
+            "Department",
+            "Position",
+            "PerformanceScore",
+            "EngagementSurvey",
+            "EmpSatisfaction",
+            "DaysLateLast30",
+            "Absences",
+            "TenureDays",
+            "TenureYears",
+            "DaysSinceLastReview",
+            "AuditRisk",
+            "AuditClassDisplay",
+            "Termd",
+            "AuditRiskBucket",
+        ]
+        show_cols = [c for c in show_cols if c in filtered_df.columns]
+
+        display_table = filtered_df[show_cols].copy()
+        if "AuditRisk" in display_table.columns:
+            display_table["AuditRisk"] = (display_table["AuditRisk"] * 100).round(2).astype(str) + "%"
+
+        display_table = display_table.rename(
+            columns={
+                "UIEmpID": "EmpID",
+                "AuditRisk": "RiskFromAudit",
+                "AuditClassDisplay": "AuditClass",
+                "AuditRiskBucket": "RiskBucket",
+            }
         )
 
-        manager_summary["avg_predicted_risk"] = (manager_summary["avg_predicted_risk"] * 100).round(2)
-        manager_summary = manager_summary.sort_values(
-            by=["avg_predicted_risk", "predicted_high_risk_count"],
-            ascending=[False, False],
-        ).reset_index(drop=True)
+        st.dataframe(display_table, use_container_width=True)
 
-        st.dataframe(manager_summary, use_container_width=True)
-
-    st.markdown("### Filtered employee table")
-
-    display_table = filtered_df.copy()
-    if "PredictedRisk" in display_table.columns:
-        display_table["PredictedRisk"] = (display_table["PredictedRisk"] * 100).round(2).astype(str) + "%"
-
-    st.dataframe(display_table, use_container_width=True)
-
+        
 # =========================
 # TAB 4 - FAIRNESS AUDIT
 # =========================
@@ -676,7 +828,7 @@ with tabs[3]:
     else:
         fallback_rows = []
         for attr in ["Sex", "RaceDesc"]:
-            if attr in predictions_df.columns and "PredictedRisk" in predictions_df.columns:
+            if attr in predictions_df.columns and "DisplayRisk" in predictions_df.columns:
                 for group_value, g in predictions_df.groupby(attr, dropna=False):
                     fallback_rows.append(
                         {
@@ -684,8 +836,8 @@ with tabs[3]:
                             "group": str(group_value),
                             "count": int(len(g)),
                             "actual_attrition_rate": float(g["Termd"].mean()) if "Termd" in g.columns else np.nan,
-                            "predicted_attrition_rate": float(g["PredictedClass"].mean()) if "PredictedClass" in g.columns else np.nan,
-                            "avg_risk_score": float(g["PredictedRisk"].mean()),
+                            "predicted_attrition_rate": float(g["DisplayClass"].mean()) if "DisplayClass" in g.columns else np.nan,
+                            "avg_risk_score": float(g["DisplayRisk"].mean()),
                         }
                     )
         fallback_df = pd.DataFrame(fallback_rows)
@@ -724,7 +876,7 @@ with tabs[4]:
         "dataset_rows": total_employees,
         "actual_attrition_rate": round(actual_attrition_rate, 4),
         "predicted_high_risk_employees": predicted_high_risk,
-        "roc_auc": round(roc_auc, 4),
+        "audit_file_linked": audit_linked,
         "training_columns": metadata.get("training_columns", []),
         "categorical_columns": metadata.get("categorical_columns", []),
         "numerical_columns": metadata.get("numerical_columns", []),

@@ -60,3 +60,8 @@ Our solution follows a clear and modular pipeline:
 
 
 ## 5. Project Structure
+
+## 6. Démo
+
+<img width="2385" height="1101" alt="image" src="https://github.com/user-attachments/assets/ab46f50b-99ea-42df-8146-6e5570a52496" />
+

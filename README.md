@@ -82,3 +82,12 @@ Raw Results
 
 <img width="2385" height="1101" alt="image" src="https://github.com/user-attachments/assets/ab46f50b-99ea-42df-8146-6e5570a52496" />
 
+ ## 7.DashBoard
+ <img width="1888" height="871" alt="Screenshot 2026-03-17 120141" src="https://github.com/user-attachments/assets/2b1649c1-20f9-458b-be13-34ae704c9e54" />
+<img width="1888" height="871" alt="Screenshot 2026-03-17 120141" src="https://github.com/user-attachments/assets/2b1649c1-20f9-458b-be13-34ae704c9e54" />
+<img width="1903" height="913" alt="Screenshot 2026-03-17 120129" src="https://github.com/user-attachments/assets/a4bf64c2-e8a7-4d52-8502-8e7f0fa6c708" />
+<img width="1903" height="913" alt="Screenshot 2026-03-17 120129" src="https://github.com/user-attachments/assets/a4bf64c2-e8a7-4d52-8502-8e7f0fa6c708" />
+<img width="1904" height="1012" alt="Screenshot 2026-03-17 120107" src="https://github.com/user-attachments/assets/87801429-b3f4-4fac-84ff-b84a2c07a183" />
+<img width="1904" height="1012" alt="Screenshot 2026-03-17 120107" src="https://github.com/user-attachments/assets/87801429-b3f4-4fac-84ff-b84a2c07a183" />
+
+

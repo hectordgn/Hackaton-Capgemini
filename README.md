@@ -61,6 +61,21 @@ Our solution follows a clear and modular pipeline:
 
 ## 5. Project Structure
 
+The repository is organized exactly as follows:
+
+├── .gitignore                     # Prevents sensitive data and virtual environments from leaking
+├── app.py                         # (3) Streamlit App: The main interactive HR dashboard (UI)
+├── Audit_Attrition_Complet.xlsx   # Output: Specific factors for explainability (Excel format)
+├── common.py                      # Shared helper functions and configurations
+├── Hash_delete.py                 # (1) Security Script: Anonymizes data and hashes IDs
+├── HR_Analytics.csv               # Safe, anonymized dataset used for training the model
+├── hr_clean_notebook_new.ipynb    # Jupyter Notebook: Initial data exploration and prototyping
+├── HR_Keys.csv                    # SECRET mapping table (Must never be shared or committed)
+├── HRDataset_v14.csv              # Raw initial dataset (Sensitive data)
+├── MODEL CARD.docx                # Documentation: Risks, compliance, and model limitations
+├── README.md                      # Project documentation and instructions
+└── train_model.py                 # (2) ML Pipeline: Trains the frugal model and generates predictions
+
 ## 6. Démo
 
 Raw Results

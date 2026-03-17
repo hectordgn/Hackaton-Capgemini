@@ -53,10 +53,10 @@ Our solution follows a clear and modular pipeline:
         │ (Top 5 Drivers)          │
         └──────┬───────────────────┘
                ↓
-   ┌──────────────────────────────────────┐
-   │ Dashboard + Excel Output             │
-   │ HR Decisions & Risk Mitigation       │
-   └──────────────────────────────────────┘
+        ┌────────────────────────────────────┐
+        │ Dashboard + Excel Output           │
+        │ -> HR Decisions & Risk Mitigation  │
+        └──────┬─────────────────────────────┘
 
 
 ## 5. Project Structure

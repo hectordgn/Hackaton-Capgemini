@@ -55,7 +55,7 @@ Our solution follows a clear and modular pipeline:
                ↓
    ┌──────────────────────────────────────┐
    │ Dashboard + Excel Output             │
-   │ → HR Decisions & Risk Mitigation     │
+   │ HR Decisions & Risk Mitigation       │
    └──────────────────────────────────────┘
 
 
